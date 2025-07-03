@@ -89,6 +89,8 @@ class BaseTask:
 
         temp = random.random()
 
+        B, seq, vocab = out['logits'].shape
+
         if os.environ['AT'] == 'True' and temp > (1 - eval(at_ratio)):
             if adv_methods == "MI":
                 from lavis.attack_methods.SQA.MI import MI_Attack
@@ -106,15 +108,18 @@ class BaseTask:
                 probs_adv = F.log_softmax(logits_adv, dim=-1)     # [B, T, V]
                 probs_clean = F.softmax(logits_clean, dim=-1)         # [B, T, V]
 
-                loss_kl = F.kl_div(probs_adv[token_mask], probs_clean[token_mask], reduction='batchmean') 
+                loss_kl = F.kl_div(probs_adv[token_mask].view(B,seq,vocab), \
+                        probs_clean[token_mask].view(B,seq,vocab), reduction='batchmean') 
                 beta = 1.0
                 loss = loss + beta * loss_kl
 
             elif at_methods == "NuAT":
                 Nuc_Reg = 4
                 adv_out = model(adv_samples)
-                loss = out['loss'] + Nuc_Reg * torch.linalg.matrix_norm(adv_out['logits']*token_mask - \
-                                                    out['logits']*token_mask, ord='nuc', dim=(1, 2)).mean()
+                # loss = out['loss'] + Nuc_Reg * torch.linalg.matrix_norm(adv_out['logits'][token_mask] - \
+                #                                     out['logits'][token_mask], ord='nuc', dim=(1, 2)).mean()
+                loss = out['loss'] + Nuc_Reg * torch.linalg.matrix_norm(adv_out['logits'][token_mask].view(B,seq,vocab).float() - \
+                                                    out['logits'][token_mask].view(B,seq,vocab).float(),ord='nuc', dim=(1, 2)).mean()
                 
         if 'loss_rec' in out:
             return [loss, out['loss_rec']]

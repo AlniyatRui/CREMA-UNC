@@ -45,7 +45,7 @@ def NuAT_Attack(model, modalities, samples, out, norm=np.inf, iterations=5):
             adv_samples[modality] = adv_samples[modality].detach().requires_grad_()
             loss = model(samples=adv_samples)['loss']
             model.zero_grad()
-            loss.backward()
+            loss.backward(retain_graph=True)
             grad = adv_samples[modality].grad
 
             grad = grad / (torch.mean(torch.abs(grad), dim=list(range(1, grad.dim())), keepdim=True) + 1e-8)
@@ -101,8 +101,14 @@ def NuAT_Attack(model, modalities, samples, out, norm=np.inf, iterations=5):
     bern_val_tensor = pixel_to_normalized(bern_val, std).to(model.device)
 
     for mod in modalities:
-        import pdb; pdb.set_trace()
-        bern_init = torch.sign(torch.tensor([0.5]).to(model.device) - torch.rand_like(adv_samples[mod])) * bern_val_tensor
+        # import pdb; pdb.set_trace()
+        if mod == 'rgb':
+            bern_init = torch.sign(torch.tensor([0.5]).to(model.device) - \
+                                   torch.rand_like(adv_samples[mod])) * bern_val_tensor.view(1, 1, -1, 1, 1)
+        else:
+            bern_init = torch.sign(torch.tensor([0.5]).to(model.device) - \
+                                   torch.rand_like(adv_samples[mod])) * bern_val_tensor.view(1, -1, 1, 1, 1)
+
         adv_samples[mod] = adv_samples[mod] + bern_init
 
     # 设置为可导
@@ -111,10 +117,20 @@ def NuAT_Attack(model, modalities, samples, out, norm=np.inf, iterations=5):
 
     rout = model(samples=adv_samples)
     token_mask = out['mask'].bool()
-    loss = rout['loss'] + Nuc_Reg * torch.linalg.matrix_norm(rout['logits']*token_mask - out['logits']*token_mask, ord='nuc', dim=(1, 2)).mean()
+
+    B, seq, vocab = rout['logits'].shape
+
+    # loss = rout['loss'] + Nuc_Reg * torch.linalg.matrix_norm(rout['logits'][token_mask] - out['logits'][token_mask], ord='nuc', dim=(1, 2)).mean()
+    # with torch.cuda.amp.autocast(enabled=False):
+    import pdb; pdb.set_trace()
+    nuc_loss = torch.linalg.matrix_norm(
+        rout['logits'][token_mask].view(B,seq,vocab).float() - out['logits'][token_mask].view(B,seq,vocab).float(),
+        ord='nuc', dim=(1, 2)
+    ).mean()
+    loss = rout['loss'] + nuc_loss * Nuc_Reg
 
     model.zero_grad()
-    loss.backward()
+    loss.backward(retain_graph=True)
 
     for mod in modalities:
         if weight[mod].item() == 0:
