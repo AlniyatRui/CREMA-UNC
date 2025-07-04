@@ -22,7 +22,7 @@ export MODALITIES='rgb_depth_norm'
 exp_name='10%-NuAT-PreAttack'
 ckpt='/data/workspace/zhangjunrui/NeurIPS25/CREMA/SQA3D/sqa3d_vpdn.pth'
 # resume_ckpt_path='/data/workspace/zhangjunrui/NeurIPS25/CREMA/SQA3D/sqa3d_vpdn.pth'
-CUDA_VISIBLE_DEVICES=4,5,6,7 python -m torch.distributed.run --nproc_per_node=1 --master_port 29413 train.py \
+CUDA_VISIBLE_DEVICES=4,5,6,7 python -m torch.distributed.run --nproc_per_node=4 --master_port 29423 train.py \
 --cfg-path lavis/projects/crema/train/sqa3d-exp3-bs2.yaml \
 --options run.output_dir=${result_dir}${exp_name} \
 model.finetuned=${ckpt} \

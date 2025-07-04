@@ -87,7 +87,12 @@ class BaseTask:
         loss = out["loss"]
         token_mask = out['mask'].bool()
 
-        temp = random.random()
+        temp = torch.rand(1, device=samples['rgb'].device if 'rgb' in samples else 'cuda')  # 保证设备对齐
+
+        if dist.is_initialized():
+            dist.broadcast(temp, src=0)
+
+        temp = temp.item()
 
         B, seq, vocab = out['logits'].shape
 
@@ -96,8 +101,9 @@ class BaseTask:
                 from lavis.attack_methods.SQA.MI import MI_Attack
                 adv_samples = MI_Attack(model, modalities, samples)
             elif adv_methods == "NuAT":
+                out_logits = out['logits'].detach()
                 from lavis.attack_methods.SQA.NuAT import NuAT_Attack
-                adv_samples = NuAT_Attack(model, modalities, samples, out)
+                adv_samples = NuAT_Attack(model, modalities, samples, out_logits)
 
             if at_methods == "TRADES":
                 adv_out = model(adv_samples)
@@ -114,12 +120,13 @@ class BaseTask:
                 loss = loss + beta * loss_kl
 
             elif at_methods == "NuAT":
-                Nuc_Reg = 4
+                Nuc_Reg = 1 / 1000
                 adv_out = model(adv_samples)
                 # loss = out['loss'] + Nuc_Reg * torch.linalg.matrix_norm(adv_out['logits'][token_mask] - \
                 #                                     out['logits'][token_mask], ord='nuc', dim=(1, 2)).mean()
+                out_logits = out['logits'].detach()
                 loss = out['loss'] + Nuc_Reg * torch.linalg.matrix_norm(adv_out['logits'][token_mask].view(B,seq,vocab).float() - \
-                                                    out['logits'][token_mask].view(B,seq,vocab).float(),ord='nuc', dim=(1, 2)).mean()
+                                                    out_logits[token_mask].view(B,seq,vocab).float(),ord='nuc', dim=(1, 2)).mean()
                 
         if 'loss_rec' in out:
             return [loss, out['loss_rec']]
